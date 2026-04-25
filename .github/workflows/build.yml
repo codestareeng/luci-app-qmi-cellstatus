@@ -23,11 +23,8 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            target: x86/64
           - arch: aarch64_cortex-a53
-            target: sunxi/cortexa53
           - arch: arm_cortex-a7_neon-vfpv4
-            target: sunxi/cortexa7
 
     steps:
       - name: Checkout
@@ -38,7 +35,7 @@ jobs:
       - name: Build package with OpenWrt SDK (25.12 / APK)
         uses: openwrt/gh-action-sdk@v7
         env:
-          ARCH: ${{ matrix.target }}-25.12
+          ARCH: ${{ matrix.arch }}-25.12
           FEEDNAME: packages_ci
           PACKAGES: luci-app-qmi-cellstatus
           NO_SHFMT_CHECK: "1"
