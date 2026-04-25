@@ -13,13 +13,15 @@
      qmi_devices = io.popen ("ls /sys/bus/usb/drivers/qmi_wwan/ 2>/dev/null")
      if qmi_devices then
           for iface in qmi_devices:lines() do
-               local usbmisc = io.popen ("ls /sys/bus/usb/drivers/qmi_wwan/" .. iface .. "/usbmisc/ 2>/dev/null")
-               if usbmisc then
-                    local name = usbmisc:read("*l")
-                    usbmisc:close()
-                    if name and name ~= '' then
-                         device = '/dev/' .. name
-                         break
+               if iface:match('^[%w%.%-%:]+$') then
+                    local usbmisc = io.popen ("ls /sys/bus/usb/drivers/qmi_wwan/" .. iface .. "/usbmisc/ 2>/dev/null")
+                    if usbmisc then
+                         local name = usbmisc:read("*l")
+                         usbmisc:close()
+                         if name and name ~= '' then
+                              device = '/dev/' .. name
+                              break
+                         end
                     end
                end
           end
