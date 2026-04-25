@@ -16,7 +16,7 @@ define Package/luci-app-qmi-cellstatus
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=Cellular QMI modem WWAN connection information and status
-  DEPENDS:=+luci-base +uqmi
+  DEPENDS:=+luci-base +luci-compat +uqmi
   PKGARCH:=all
 endef
 
