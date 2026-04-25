@@ -28,6 +28,10 @@ jobs:
             pkg_arch: aarch64_cortex-a53
           - sdk_arch: sunxi-cortexa7-25.12.2
             pkg_arch: arm_cortex-a7_neon-vfpv4
+          - sdk_arch: ath79-generic-25.12.2
+            pkg_arch: mips_24kc
+          - sdk_arch: ramips-mt7620-25.12.2
+            pkg_arch: mipsel_24kc
 
     steps:
       - name: Checkout
@@ -95,3 +99,5 @@ jobs:
             | `luci-app-qmi-cellstatus-x86_64` | x86 64-bit |
             | `luci-app-qmi-cellstatus-aarch64_cortex-a53` | ARM 64-bit (Cortex-A53) |
             | `luci-app-qmi-cellstatus-arm_cortex-a7_neon-vfpv4` | ARM 32-bit (Cortex-A7) |
+            | `luci-app-qmi-cellstatus-mips_24kc` | MIPS 32-bit big-endian 24Kc (Atheros/QCA) |
+            | `luci-app-qmi-cellstatus-mipsel_24kc` | MIPS 32-bit little-endian 24Kc (MediaTek/Ralink) |
