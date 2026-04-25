@@ -26,6 +26,10 @@ define Package/luci-app-qmi-cellstatus/description
   connection type (LTE/UMTS), and current cell location information.
 endef
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+endef
+
 define Build/Compile
 endef
 
