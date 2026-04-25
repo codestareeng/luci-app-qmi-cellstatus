@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build (${{ matrix.pkg_arch }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,9 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
-          - arch: aarch64_cortex-a53
-          - arch: arm_cortex-a7_neon-vfpv4
+          - sdk_arch: x86-64-25.12.2
+            pkg_arch: x86_64
+          - sdk_arch: sunxi-cortexa53-25.12.2
+            pkg_arch: aarch64_cortex-a53
+          - sdk_arch: sunxi-cortexa7-25.12.2
+            pkg_arch: arm_cortex-a7_neon-vfpv4
 
     steps:
       - name: Checkout
@@ -35,7 +38,7 @@ jobs:
       - name: Build package with OpenWrt SDK (25.12 / APK)
         uses: openwrt/gh-action-sdk@v7
         env:
-          ARCH: ${{ matrix.arch }}-25.12
+          ARCH: ${{ matrix.sdk_arch }}
           FEEDNAME: packages_ci
           PACKAGES: luci-app-qmi-cellstatus
           NO_SHFMT_CHECK: "1"
@@ -43,8 +46,8 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: luci-app-qmi-cellstatus-${{ matrix.arch }}
-          path: bin/packages/${{ matrix.arch }}/packages_ci/luci-app-qmi-cellstatus*.apk
+          name: luci-app-qmi-cellstatus-${{ matrix.pkg_arch }}
+          path: bin/packages/${{ matrix.pkg_arch }}/packages_ci/luci-app-qmi-cellstatus*.apk
           if-no-files-found: warn
 
   release:
