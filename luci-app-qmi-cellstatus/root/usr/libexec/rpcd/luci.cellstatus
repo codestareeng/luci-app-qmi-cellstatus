@@ -8,9 +8,8 @@ find_qmi_device() {
 		[ -d "${iface}/usbmisc" ] || continue
 		for dev in "${iface}/usbmisc/"*; do
 			name="${dev##*/}"
-			case "$name" in
-				'*') continue ;;  # unexpanded glob — no entries
-			esac
+			# skip literal '*' left by an unexpanded glob (no entries)
+			[ "$name" = '*' ] && continue
 			[ -c "/dev/$name" ] || continue
 			printf '/dev/%s' "$name"
 			return 0
