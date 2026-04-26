@@ -1,0 +1,143 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# rpcd plugin: expose QMI cellular modem status via ubus as "luci.cellstatus"
+
+LOG=/tmp/luci-cellstatus.log
+
+log() {
+local msg="[luci.cellstatus] $*"
+echo "$msg" >&2
+echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
+}
+
+# Validate a JSON value using jsonfilter (always available on OpenWrt via libubox).
+# Echoes the value unchanged if valid JSON; echoes "null" if empty or malformed.
+#
+# Some uqmi commands produce structurally invalid JSON (e.g. --get-cell-location-info
+# embeds neighbor-cell objects directly inside a JSON object without key names).
+# Embedding those into our response makes the entire JSON blob unparseable — rpcd
+# drops the whole response and JavaScript receives nothing.
+#
+# Empty string handling: uqmi always emits at least a JSON token for supported
+# commands (e.g. "" for an empty MSISDN), so a shell-empty result means the
+# command failed or timed out — correctly represented as JSON null.
+#
+# Implementation note: we use jsonfilter only as a validator (exit code check) and
+# echo the original $val on success.  jsonfilter's own output for scalar types (e.g.
+# a bare JSON string "connected") differs from the raw token and cannot be
+# round-tripped back into a larger JSON context, so we must preserve the original.
+json_safe() {
+local val="$1"
+[ -z "$val" ] && { printf 'null'; return; }
+if printf '%s' "$val" | jsonfilter -e '@' >/dev/null 2>&1; then
+printf '%s' "$val"
+else
+log "    json_safe: malformed JSON from uqmi, using null"
+printf 'null'
+fi
+}
+
+find_qmi_device() {
+local iface dev name found=0
+log "find_qmi_device: scanning /sys/bus/usb/drivers/qmi_wwan/"
+for iface in /sys/bus/usb/drivers/qmi_wwan/*; do
+log "  checking iface: $iface"
+if [ ! -d "${iface}/usbmisc" ]; then
+log "    no usbmisc dir, skipping"
+continue
+fi
+log "    usbmisc dir exists"
+for dev in "${iface}/usbmisc/"*; do
+name="${dev##*/}"
+log "    dev entry: $dev  name=$name"
+# skip literal '*' left by an unexpanded glob (no entries)
+if [ "$name" = '*' ]; then
+log "    unexpanded glob, no entries"
+continue
+fi
+found=1
+if [ -c "/dev/$name" ]; then
+log "    /dev/$name is a char device - FOUND"
+printf '/dev/%s' "$name"
+return 0
+else
+log "    /dev/$name not a char device, skipping"
+fi
+done
+done
+[ "$found" = 0 ] && log "find_qmi_device: no qmi_wwan interfaces with usbmisc found"
+log "find_qmi_device: no usable device found"
+return 1
+}
+
+case "$1" in
+list)
+echo '{"get_status":{}}'
+;;
+call)
+case "$2" in
+get_status)
+log "get_status called"
+DEV=$(find_qmi_device)
+
+if [ -z "$DEV" ]; then
+log "get_status: no device found, returning modem_present=false"
+echo '{"modem_present":false}'
+exit 0
+fi
+
+log "get_status: using device $DEV"
+
+# Each uqmi call gets an explicit 5-second timeout so a slow or
+# unresponsive modem command cannot stall the entire rpcd call.
+# Every value is passed through json_safe() so that malformed output
+# from any uqmi command is replaced with null rather than breaking
+# the overall JSON response.
+log "  calling --get-imei"
+IMEI=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-imei 2>/dev/null)")
+log "  IMEI=$IMEI"
+
+log "  calling --get-iccid"
+ICCID=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-iccid 2>/dev/null)")
+log "  ICCID=$ICCID"
+
+log "  calling --get-imsi"
+IMSI=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-imsi 2>/dev/null)")
+log "  IMSI=$IMSI"
+
+log "  calling --get-msisdn"
+MSISDN=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-msisdn 2>/dev/null)")
+log "  MSISDN=$MSISDN"
+
+log "  calling --get-data-status"
+DATA=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-data-status 2>/dev/null)")
+log "  DATA=$DATA"
+
+log "  calling --get-capabilities"
+CAPS=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-capabilities 2>/dev/null)")
+log "  CAPS=$CAPS"
+
+log "  calling --get-signal-info"
+SIG=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-signal-info 2>/dev/null)")
+log "  SIG=$SIG"
+
+log "  calling --get-cell-location-info"
+CELL=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-cell-location-info 2>/dev/null)")
+log "  CELL=$CELL"
+
+# Build the complete JSON response in a single variable so we can
+# log it before output — this makes any remaining JSON issues
+# immediately visible in /tmp/luci-cellstatus.log.
+# The :-null fallbacks are a belt-and-suspenders safety measure:
+# json_safe() always returns a value, but the fallbacks ensure
+# the response stays syntactically valid even in unexpected edge cases.
+JSON=$(printf '{"modem_present":true,"imei":%s,"iccid":%s,"imsi":%s,"msisdn":%s,"data_status":%s,"capabilities":%s,"signal_info":%s,"cell_location":%s}' \
+"${IMEI:-null}" "${ICCID:-null}" "${IMSI:-null}" "${MSISDN:-null}" \
+"${DATA:-null}" "${CAPS:-null}" "${SIG:-null}" "${CELL:-null}")
+log "JSON output: $JSON"
+printf '%s\n' "$JSON"
+log "get_status: done"
+;;
+esac
+;;
+esac

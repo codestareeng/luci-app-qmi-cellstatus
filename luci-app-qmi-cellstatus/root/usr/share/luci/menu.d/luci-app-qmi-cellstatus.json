@@ -1,0 +1,13 @@
+{
+	"admin/status/cellstatus": {
+		"title": "Cellular Info",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "cellstatus"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmi-cellstatus" ]
+		}
+	}
+}
