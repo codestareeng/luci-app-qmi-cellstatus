@@ -1,0 +1,10 @@
+{
+	"luci-app-qmi-cellstatus": {
+		"description": "Grant ubus access for luci-app-qmi-cellstatus",
+		"read": {
+			"ubus": {
+				"luci.cellstatus": [ "get_status" ]
+			}
+		}
+	}
+}

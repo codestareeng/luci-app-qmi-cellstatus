@@ -1,0 +1,63 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# rpcd plugin: expose QMI cellular modem status via ubus as "luci.cellstatus"
+
+find_qmi_device() {
+	local iface dev name
+	for iface in /sys/bus/usb/drivers/qmi_wwan/*; do
+		[ -d "${iface}/usbmisc" ] || continue
+		for dev in "${iface}/usbmisc/"*; do
+			name="${dev##*/}"
+			case "$name" in
+				'*') continue ;;  # unexpanded glob — no entries
+			esac
+			[ -c "/dev/$name" ] || continue
+			printf '/dev/%s' "$name"
+			return 0
+		done
+	done
+	return 1
+}
+
+case "$1" in
+	list)
+		echo '{"get_status":{}}'
+		;;
+	call)
+		case "$2" in
+			get_status)
+				DEV=$(find_qmi_device)
+
+				if [ -z "$DEV" ]; then
+					echo '{"modem_present":false}'
+					exit 0
+				fi
+
+				IMEI=$(uqmi -d "$DEV" --get-imei 2>/dev/null)
+				ICCID=$(uqmi -d "$DEV" --get-iccid 2>/dev/null)
+				IMSI=$(uqmi -d "$DEV" --get-imsi 2>/dev/null)
+				MSISDN=$(uqmi -d "$DEV" --get-msisdn 2>/dev/null)
+				DATA=$(uqmi -d "$DEV" --get-data-status 2>/dev/null)
+				CAPS=$(uqmi -d "$DEV" -s --get-capabilities 2>/dev/null)
+				SIG=$(uqmi -d "$DEV" -s --get-signal-info 2>/dev/null)
+				CELL=$(uqmi -d "$DEV" -s --get-cell-location-info 2>/dev/null)
+
+				# uqmi outputs valid JSON for each field:
+				# simple values like "connected" or "353544061234567" (quoted strings)
+				# -s JSON objects like {"type":"lte","rssi":-74,...}
+				# Build the response by direct concatenation (safe since uqmi outputs
+				# single-line JSON with no embedded newlines).
+				printf '{"modem_present":true'
+				printf ',"imei":%s'          "${IMEI:-null}"
+				printf ',"iccid":%s'         "${ICCID:-null}"
+				printf ',"imsi":%s'          "${IMSI:-null}"
+				printf ',"msisdn":%s'        "${MSISDN:-null}"
+				printf ',"data_status":%s'   "${DATA:-null}"
+				printf ',"capabilities":%s'  "${CAPS:-null}"
+				printf ',"signal_info":%s'   "${SIG:-null}"
+				printf ',"cell_location":%s' "${CELL:-null}"
+				printf '}\n'
+				;;
+		esac
+		;;
+esac
