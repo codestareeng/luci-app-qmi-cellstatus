@@ -5,90 +5,108 @@
 LOG=/tmp/luci-cellstatus.log
 
 log() {
-	local msg="[luci.cellstatus] $*"
-	echo "$msg" >&2
-	echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
+local msg="[luci.cellstatus] $*"
+echo "$msg" >&2
+echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
 }
 
 find_qmi_device() {
-	local iface dev name found=0
-	log "find_qmi_device: scanning /sys/bus/usb/drivers/qmi_wwan/"
-	for iface in /sys/bus/usb/drivers/qmi_wwan/*; do
-		log "  checking iface: $iface"
-		if [ ! -d "${iface}/usbmisc" ]; then
-			log "    no usbmisc dir, skipping"
-			continue
-		fi
-		log "    usbmisc dir exists"
-		for dev in "${iface}/usbmisc/"*; do
-			name="${dev##*/}"
-			log "    dev entry: $dev  name=$name"
-			# skip literal '*' left by an unexpanded glob (no entries)
-			if [ "$name" = '*' ]; then
-				log "    unexpanded glob, no entries"
-				continue
-			fi
-			found=1
-			if [ -c "/dev/$name" ]; then
-				log "    /dev/$name is a char device — FOUND"
-				printf '/dev/%s' "$name"
-				return 0
-			else
-				log "    /dev/$name not a char device, skipping"
-			fi
-		done
-	done
-	[ "$found" = 0 ] && log "find_qmi_device: no qmi_wwan interfaces with usbmisc found"
-	log "find_qmi_device: no usable device found"
-	return 1
+local iface dev name found=0
+log "find_qmi_device: scanning /sys/bus/usb/drivers/qmi_wwan/"
+for iface in /sys/bus/usb/drivers/qmi_wwan/*; do
+log "  checking iface: $iface"
+if [ ! -d "${iface}/usbmisc" ]; then
+log "    no usbmisc dir, skipping"
+continue
+fi
+log "    usbmisc dir exists"
+for dev in "${iface}/usbmisc/"*; do
+name="${dev##*/}"
+log "    dev entry: $dev  name=$name"
+# skip literal '*' left by an unexpanded glob (no entries)
+if [ "$name" = '*' ]; then
+log "    unexpanded glob, no entries"
+continue
+fi
+found=1
+if [ -c "/dev/$name" ]; then
+log "    /dev/$name is a char device - FOUND"
+printf '/dev/%s' "$name"
+return 0
+else
+log "    /dev/$name not a char device, skipping"
+fi
+done
+done
+[ "$found" = 0 ] && log "find_qmi_device: no qmi_wwan interfaces with usbmisc found"
+log "find_qmi_device: no usable device found"
+return 1
 }
 
 case "$1" in
-	list)
-		echo '{"get_status":{}}'
-		;;
-	call)
-		case "$2" in
-			get_status)
-				log "get_status called"
-				DEV=$(find_qmi_device)
+list)
+echo '{"get_status":{}}'
+;;
+call)
+case "$2" in
+get_status)
+log "get_status called"
+DEV=$(find_qmi_device)
 
-				if [ -z "$DEV" ]; then
-					log "get_status: no device found, returning modem_present=false"
-					echo '{"modem_present":false}'
-					exit 0
-				fi
+if [ -z "$DEV" ]; then
+log "get_status: no device found, returning modem_present=false"
+echo '{"modem_present":false}'
+exit 0
+fi
 
-				log "get_status: using device $DEV"
+log "get_status: using device $DEV"
 
-				IMEI=$(uqmi -d "$DEV" --get-imei 2>/dev/null)
-				log "  IMEI=$IMEI"
-				ICCID=$(uqmi -d "$DEV" --get-iccid 2>/dev/null)
-				IMSI=$(uqmi -d "$DEV" --get-imsi 2>/dev/null)
-				MSISDN=$(uqmi -d "$DEV" --get-msisdn 2>/dev/null)
-				DATA=$(uqmi -d "$DEV" --get-data-status 2>/dev/null)
-				CAPS=$(uqmi -d "$DEV" -s --get-capabilities 2>/dev/null)
-				SIG=$(uqmi -d "$DEV" -s --get-signal-info 2>/dev/null)
-				CELL=$(uqmi -d "$DEV" -s --get-cell-location-info 2>/dev/null)
+# Each uqmi call gets an explicit 5-second timeout so a slow or
+# unresponsive modem command cannot stall the entire rpcd call.
+# The -s flag is intentionally omitted: standard uqmi commands
+# output JSON directly without any wrapper flag needed.
+log "  calling --get-imei"
+IMEI=$(uqmi -d "$DEV" --timeout 5000 --get-imei 2>/dev/null)
+log "  IMEI=$IMEI"
 
-				log "get_status: data_status=$DATA"
+log "  calling --get-iccid"
+ICCID=$(uqmi -d "$DEV" --timeout 5000 --get-iccid 2>/dev/null)
+log "  ICCID=$ICCID"
 
-				# uqmi outputs valid JSON for each field:
-				# simple values like "connected" or "353544061234567" (quoted strings)
-				# -s JSON objects like {"type":"lte","rssi":-74,...}
-				# Build the response by direct concatenation (safe since uqmi outputs
-				# single-line JSON with no embedded newlines).
-				printf '{"modem_present":true'
-				printf ',"imei":%s'          "${IMEI:-null}"
-				printf ',"iccid":%s'         "${ICCID:-null}"
-				printf ',"imsi":%s'          "${IMSI:-null}"
-				printf ',"msisdn":%s'        "${MSISDN:-null}"
-				printf ',"data_status":%s'   "${DATA:-null}"
-				printf ',"capabilities":%s'  "${CAPS:-null}"
-				printf ',"signal_info":%s'   "${SIG:-null}"
-				printf ',"cell_location":%s' "${CELL:-null}"
-				printf '}\n'
-				;;
-		esac
-		;;
+log "  calling --get-imsi"
+IMSI=$(uqmi -d "$DEV" --timeout 5000 --get-imsi 2>/dev/null)
+log "  IMSI=$IMSI"
+
+log "  calling --get-msisdn"
+MSISDN=$(uqmi -d "$DEV" --timeout 5000 --get-msisdn 2>/dev/null)
+log "  MSISDN=$MSISDN"
+
+log "  calling --get-data-status"
+DATA=$(uqmi -d "$DEV" --timeout 5000 --get-data-status 2>/dev/null)
+log "  DATA=$DATA"
+
+log "  calling --get-capabilities"
+CAPS=$(uqmi -d "$DEV" --timeout 5000 --get-capabilities 2>/dev/null)
+log "  CAPS=$CAPS"
+
+log "  calling --get-signal-info"
+SIG=$(uqmi -d "$DEV" --timeout 5000 --get-signal-info 2>/dev/null)
+log "  SIG=$SIG"
+
+log "  calling --get-cell-location-info"
+CELL=$(uqmi -d "$DEV" --timeout 5000 --get-cell-location-info 2>/dev/null)
+log "  CELL=$CELL"
+
+# Build the complete JSON response in a single variable so we can
+# log it before output — this makes any malformed-JSON issues
+# immediately visible in /tmp/luci-cellstatus.log.
+JSON=$(printf '{"modem_present":true,"imei":%s,"iccid":%s,"imsi":%s,"msisdn":%s,"data_status":%s,"capabilities":%s,"signal_info":%s,"cell_location":%s}' \
+"${IMEI:-null}" "${ICCID:-null}" "${IMSI:-null}" "${MSISDN:-null}" \
+"${DATA:-null}" "${CAPS:-null}" "${SIG:-null}" "${CELL:-null}")
+log "JSON output: $JSON"
+printf '%s\n' "$JSON"
+log "get_status: done"
+;;
+esac
+;;
 esac

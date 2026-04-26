@@ -5,8 +5,7 @@
 
 var callGetStatus = rpc.declare({
 	object: 'luci.cellstatus',
-	method: 'get_status',
-	expect: {}
+	method: 'get_status'
 });
 
 function renderRow(label, value) {
@@ -40,7 +39,13 @@ return view.extend({
 
 		if (!status || !status.modem_present) {
 			node.appendChild(E('div', { 'class': 'cbi-section' }, [
-				E('p', {}, [ _('There seems to be no cellular modem installed.') ])
+				E('p', {}, [ _('There seems to be no cellular modem installed.') ]),
+				E('p', {}, [
+					E('small', {}, [
+						_('Debug — raw RPC response: '),
+						E('code', {}, [ JSON.stringify(status) ])
+					])
+				])
 			]));
 			return node;
 		}
