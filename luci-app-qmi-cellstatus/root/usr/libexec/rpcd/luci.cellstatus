@@ -10,6 +10,23 @@ echo "$msg" >&2
 echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
 }
 
+# Validate a JSON value using jsonfilter (always available on OpenWrt via libubox).
+# Echoes the value unchanged if valid JSON; echoes "null" if empty or malformed.
+# Some uqmi commands produce structurally invalid JSON (e.g. --get-cell-location-info
+# embeds anonymous objects directly inside an object without key names).  Embedding
+# those into our response would make the entire JSON blob unparseable, causing rpcd
+# to drop the response and JavaScript to receive nothing.
+json_safe() {
+local val="$1"
+[ -z "$val" ] && { printf 'null'; return; }
+if printf '%s' "$val" | jsonfilter -e '@' >/dev/null 2>&1; then
+printf '%s' "$val"
+else
+log "    json_safe: malformed JSON from uqmi, using null"
+printf 'null'
+fi
+}
+
 find_qmi_device() {
 local iface dev name found=0
 log "find_qmi_device: scanning /sys/bus/usb/drivers/qmi_wwan/"
@@ -63,8 +80,6 @@ log "get_status: using device $DEV"
 
 # Each uqmi call gets an explicit 5-second timeout so a slow or
 # unresponsive modem command cannot stall the entire rpcd call.
-# The -s flag is intentionally omitted: standard uqmi commands
-# output JSON directly without any wrapper flag needed.
 log "  calling --get-imei"
 IMEI=$(uqmi -d "$DEV" --timeout 5000 --get-imei 2>/dev/null)
 log "  IMEI=$IMEI"
@@ -97,12 +112,21 @@ log "  calling --get-cell-location-info"
 CELL=$(uqmi -d "$DEV" --timeout 5000 --get-cell-location-info 2>/dev/null)
 log "  CELL=$CELL"
 
+# Validate each multi-field JSON value. uqmi --get-cell-location-info
+# is known to emit structurally invalid JSON on some firmware versions
+# (neighbor-cell entries are placed directly inside an object without
+# key names).  json_safe() uses jsonfilter to detect this and replaces
+# bad values with null so the outer response stays parseable.
+CAPS_J=$(json_safe "$CAPS")
+SIG_J=$(json_safe "$SIG")
+CELL_J=$(json_safe "$CELL")
+
 # Build the complete JSON response in a single variable so we can
-# log it before output — this makes any malformed-JSON issues
+# log it before output — this makes any remaining JSON issues
 # immediately visible in /tmp/luci-cellstatus.log.
 JSON=$(printf '{"modem_present":true,"imei":%s,"iccid":%s,"imsi":%s,"msisdn":%s,"data_status":%s,"capabilities":%s,"signal_info":%s,"cell_location":%s}' \
 "${IMEI:-null}" "${ICCID:-null}" "${IMSI:-null}" "${MSISDN:-null}" \
-"${DATA:-null}" "${CAPS:-null}" "${SIG:-null}" "${CELL:-null}")
+"${DATA:-null}" "$CAPS_J" "$SIG_J" "$CELL_J")
 log "JSON output: $JSON"
 printf '%s\n' "$JSON"
 log "get_status: done"
