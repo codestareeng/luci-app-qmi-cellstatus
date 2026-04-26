@@ -18,6 +18,10 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
 # Embedding those into our response makes the entire JSON blob unparseable — rpcd
 # drops the whole response and JavaScript receives nothing.
 #
+# Empty string handling: uqmi always emits at least a JSON token for supported
+# commands (e.g. "" for an empty MSISDN), so a shell-empty result means the
+# command failed or timed out — correctly represented as JSON null.
+#
 # Implementation note: we use jsonfilter only as a validator (exit code check) and
 # echo the original $val on success.  jsonfilter's own output for scalar types (e.g.
 # a bare JSON string "connected") differs from the raw token and cannot be
@@ -124,8 +128,12 @@ log "  CELL=$CELL"
 # Build the complete JSON response in a single variable so we can
 # log it before output — this makes any remaining JSON issues
 # immediately visible in /tmp/luci-cellstatus.log.
+# The :-null fallbacks are a belt-and-suspenders safety measure:
+# json_safe() always returns a value, but the fallbacks ensure
+# the response stays syntactically valid even in unexpected edge cases.
 JSON=$(printf '{"modem_present":true,"imei":%s,"iccid":%s,"imsi":%s,"msisdn":%s,"data_status":%s,"capabilities":%s,"signal_info":%s,"cell_location":%s}' \
-"$IMEI" "$ICCID" "$IMSI" "$MSISDN" "$DATA" "$CAPS" "$SIG" "$CELL")
+"${IMEI:-null}" "${ICCID:-null}" "${IMSI:-null}" "${MSISDN:-null}" \
+"${DATA:-null}" "${CAPS:-null}" "${SIG:-null}" "${CELL:-null}")
 log "JSON output: $JSON"
 printf '%s\n' "$JSON"
 log "get_status: done"
