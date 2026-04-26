@@ -12,10 +12,16 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" >> "$LOG"
 
 # Validate a JSON value using jsonfilter (always available on OpenWrt via libubox).
 # Echoes the value unchanged if valid JSON; echoes "null" if empty or malformed.
+#
 # Some uqmi commands produce structurally invalid JSON (e.g. --get-cell-location-info
-# embeds anonymous objects directly inside an object without key names).  Embedding
-# those into our response would make the entire JSON blob unparseable, causing rpcd
-# to drop the response and JavaScript to receive nothing.
+# embeds neighbor-cell objects directly inside a JSON object without key names).
+# Embedding those into our response makes the entire JSON blob unparseable — rpcd
+# drops the whole response and JavaScript receives nothing.
+#
+# Implementation note: we use jsonfilter only as a validator (exit code check) and
+# echo the original $val on success.  jsonfilter's own output for scalar types (e.g.
+# a bare JSON string "connected") differs from the raw token and cannot be
+# round-tripped back into a larger JSON context, so we must preserve the original.
 json_safe() {
 local val="$1"
 [ -z "$val" ] && { printf 'null'; return; }
@@ -80,53 +86,46 @@ log "get_status: using device $DEV"
 
 # Each uqmi call gets an explicit 5-second timeout so a slow or
 # unresponsive modem command cannot stall the entire rpcd call.
+# Every value is passed through json_safe() so that malformed output
+# from any uqmi command is replaced with null rather than breaking
+# the overall JSON response.
 log "  calling --get-imei"
-IMEI=$(uqmi -d "$DEV" --timeout 5000 --get-imei 2>/dev/null)
+IMEI=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-imei 2>/dev/null)")
 log "  IMEI=$IMEI"
 
 log "  calling --get-iccid"
-ICCID=$(uqmi -d "$DEV" --timeout 5000 --get-iccid 2>/dev/null)
+ICCID=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-iccid 2>/dev/null)")
 log "  ICCID=$ICCID"
 
 log "  calling --get-imsi"
-IMSI=$(uqmi -d "$DEV" --timeout 5000 --get-imsi 2>/dev/null)
+IMSI=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-imsi 2>/dev/null)")
 log "  IMSI=$IMSI"
 
 log "  calling --get-msisdn"
-MSISDN=$(uqmi -d "$DEV" --timeout 5000 --get-msisdn 2>/dev/null)
+MSISDN=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-msisdn 2>/dev/null)")
 log "  MSISDN=$MSISDN"
 
 log "  calling --get-data-status"
-DATA=$(uqmi -d "$DEV" --timeout 5000 --get-data-status 2>/dev/null)
+DATA=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-data-status 2>/dev/null)")
 log "  DATA=$DATA"
 
 log "  calling --get-capabilities"
-CAPS=$(uqmi -d "$DEV" --timeout 5000 --get-capabilities 2>/dev/null)
+CAPS=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-capabilities 2>/dev/null)")
 log "  CAPS=$CAPS"
 
 log "  calling --get-signal-info"
-SIG=$(uqmi -d "$DEV" --timeout 5000 --get-signal-info 2>/dev/null)
+SIG=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-signal-info 2>/dev/null)")
 log "  SIG=$SIG"
 
 log "  calling --get-cell-location-info"
-CELL=$(uqmi -d "$DEV" --timeout 5000 --get-cell-location-info 2>/dev/null)
+CELL=$(json_safe "$(uqmi -d "$DEV" --timeout 5000 --get-cell-location-info 2>/dev/null)")
 log "  CELL=$CELL"
-
-# Validate each multi-field JSON value. uqmi --get-cell-location-info
-# is known to emit structurally invalid JSON on some firmware versions
-# (neighbor-cell entries are placed directly inside an object without
-# key names).  json_safe() uses jsonfilter to detect this and replaces
-# bad values with null so the outer response stays parseable.
-CAPS_J=$(json_safe "$CAPS")
-SIG_J=$(json_safe "$SIG")
-CELL_J=$(json_safe "$CELL")
 
 # Build the complete JSON response in a single variable so we can
 # log it before output — this makes any remaining JSON issues
 # immediately visible in /tmp/luci-cellstatus.log.
 JSON=$(printf '{"modem_present":true,"imei":%s,"iccid":%s,"imsi":%s,"msisdn":%s,"data_status":%s,"capabilities":%s,"signal_info":%s,"cell_location":%s}' \
-"${IMEI:-null}" "${ICCID:-null}" "${IMSI:-null}" "${MSISDN:-null}" \
-"${DATA:-null}" "$CAPS_J" "$SIG_J" "$CELL_J")
+"$IMEI" "$ICCID" "$IMSI" "$MSISDN" "$DATA" "$CAPS" "$SIG" "$CELL")
 log "JSON output: $JSON"
 printf '%s\n' "$JSON"
 log "get_status: done"
