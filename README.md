@@ -12,18 +12,15 @@ Download the `.apk` file for your router's architecture from the [Releases](../.
 ```sh
 opkg install luci-app-qmi-cellstatus_*.apk
 ```
+or 
+
+```sh
+apk add luci-app-qmi-cellstatus_*.apk
+```
 
 Or upload it through the LuCI web interface:
 
 **System > Software > Upload Package ...**
-
-### OpenWrt 23.05 and earlier — IPK format
-
-Download `luci-app-qmi-cellstatus_2.0.0_all.ipk` from the [Releases](../../releases) section and upload it via:
-
-**System > Software > Upload Package ...**
-
-After installation you may need to log out of LuCI and re-login to see the new **Status > Cellular Info** menu entry.
 
 ## Building from source
 
